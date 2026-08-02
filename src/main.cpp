@@ -159,6 +159,8 @@ void ToggleFullScreen(HWND hwnd) {
             monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top,
             SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
+        ShowWindow(hwnd, SW_MAXIMIZE);
+        ResizeWebView(hwnd);
         g_isFullScreen = true;
         return;
     }
@@ -175,6 +177,8 @@ void ToggleFullScreen(HWND hwnd) {
         0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
+    ShowWindow(hwnd, SW_RESTORE);
+    ResizeWebView(hwnd);
     g_isFullScreen = false;
 }
 
