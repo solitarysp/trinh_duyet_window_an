@@ -1,4 +1,4 @@
-name: Build Windows google
+name: Build Windows codeptit client
 
 on:
   push:
