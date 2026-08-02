@@ -351,11 +351,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
                                             return S_OK;
                                         }
 
-                                        if (key == VK_F11 &&
-                                            (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN ||
-                                             kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN)) {
-                                            args->put_Handled(TRUE);
-                                            ToggleFullScreen(hwnd);
+                                        if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN ||
+                                            kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
+                                            if (key == VK_F11) {
+                                                args->put_Handled(TRUE);
+                                                ToggleFullScreen(hwnd);
+                                            } else if (key == VK_F9) {
+                                                args->put_Handled(TRUE);
+                                                const bool isSaved = CaptureWindowToPng(hwnd);
+                                                if (!isSaved) {
+                                                    MessageBoxW(hwnd, L"Chụp màn hình thất bại.", L"Screenshot", MB_OK | MB_ICONWARNING);
+                                                }
+                                            }
                                         }
 
                                         return S_OK;
