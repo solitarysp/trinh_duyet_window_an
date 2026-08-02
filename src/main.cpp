@@ -23,6 +23,7 @@ ComPtr<ICoreWebView2> g_webview;
 EventRegistrationToken g_acceleratorKeyToken{};
 
 bool g_isFullScreen = false;
+bool g_isCapturingScreenshot = false;
 WINDOWPLACEMENT g_windowPlacement{sizeof(WINDOWPLACEMENT)};
 DWORD g_windowedStyle = 0;
 DWORD g_windowedExStyle = 0;
@@ -79,17 +80,12 @@ std::wstring BuildScreenshotPath() {
 }
 
 bool CaptureWindowToPng(HWND hwnd) {
-    if (!g_webview) {
+    if (!g_webview || g_isCapturingScreenshot) {
         return false;
     }
 
     std::wstring filePath = BuildScreenshotPath();
     if (filePath.empty()) {
-        return false;
-    }
-
-    HANDLE doneEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!doneEvent) {
         return false;
     }
 
@@ -102,42 +98,35 @@ bool CaptureWindowToPng(HWND hwnd) {
         nullptr,
         &outputStream);
     if (FAILED(hr) || !outputStream) {
-        CloseHandle(doneEvent);
         return false;
     }
 
     LARGE_INTEGER zero{};
     outputStream->Seek(zero, STREAM_SEEK_SET, nullptr);
 
-    bool isSaved = false;
+    g_isCapturingScreenshot = true;
     hr = g_webview->CapturePreview(
         COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
         outputStream.Get(),
         Callback<ICoreWebView2CapturePreviewCompletedHandler>(
-            [&isSaved, doneEvent](HRESULT result) -> HRESULT {
-                isSaved = SUCCEEDED(result);
-                SetEvent(doneEvent);
+            [hwnd, outputStream](HRESULT result) mutable -> HRESULT {
+                if (SUCCEEDED(result)) {
+                    outputStream->Commit(STGC_DEFAULT);
+                } else {
+                    MessageBoxW(hwnd, L"Chụp màn hình thất bại.", L"Screenshot", MB_OK | MB_ICONWARNING);
+                }
+
+                g_isCapturingScreenshot = false;
                 return S_OK;
             })
             .Get());
 
     if (FAILED(hr)) {
-        CloseHandle(doneEvent);
+        g_isCapturingScreenshot = false;
         return false;
     }
 
-    constexpr DWORD kCaptureTimeoutMs = 5000;
-    if (WaitForSingleObject(doneEvent, kCaptureTimeoutMs) != WAIT_OBJECT_0) {
-        CloseHandle(doneEvent);
-        return false;
-    }
-
-    if (isSaved) {
-        outputStream->Commit(STGC_DEFAULT);
-    }
-
-    CloseHandle(doneEvent);
-    return isSaved;
+    return true;
 }
 
 void ResizeWebView(HWND hwnd) {
@@ -240,8 +229,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 return 0;
             }
             if (wParam == VK_F9) {
-                const bool isSaved = CaptureWindowToPng(hwnd);
-                if (!isSaved) {
+                const bool isStarted = CaptureWindowToPng(hwnd);
+                if (!isStarted && !g_isCapturingScreenshot) {
                     MessageBoxW(hwnd, L"Chụp màn hình thất bại.", L"Screenshot", MB_OK | MB_ICONWARNING);
                 }
                 return 0;
@@ -358,8 +347,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
                                                 ToggleFullScreen(hwnd);
                                             } else if (key == VK_F9) {
                                                 args->put_Handled(TRUE);
-                                                const bool isSaved = CaptureWindowToPng(hwnd);
-                                                if (!isSaved) {
+                                                const bool isStarted = CaptureWindowToPng(hwnd);
+                                                if (!isStarted && !g_isCapturingScreenshot) {
                                                     MessageBoxW(hwnd, L"Chụp màn hình thất bại.", L"Screenshot", MB_OK | MB_ICONWARNING);
                                                 }
                                             }
