@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <memory>
 #include <sstream>
+#include <vector>
 
 using namespace Microsoft::WRL;
 
@@ -24,6 +25,7 @@ bool g_isFullScreen = false;
 WINDOWPLACEMENT g_windowPlacement{sizeof(WINDOWPLACEMENT)};
 DWORD g_windowedStyle = 0;
 DWORD g_windowedExStyle = 0;
+std::vector<RECT> g_windowedRegions;
 ULONG_PTR g_gdiplusToken = 0;
 
 int GetPngEncoderClsid(CLSID* clsid) {
@@ -145,10 +147,30 @@ void ToggleFullScreen(HWND hwnd) {
         g_windowedExStyle = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
         GetWindowPlacement(hwnd, &g_windowPlacement);
 
+        g_windowedRegions.clear();
+        HRGN region = CreateRectRgn(0, 0, 0, 0);
+        if (region && GetWindowRgn(hwnd, region) != ERROR) {
+            const DWORD bytes = GetRegionData(region, 0, nullptr);
+            if (bytes > 0) {
+                auto data = std::make_unique<BYTE[]>(bytes);
+                auto* regionData = reinterpret_cast<RGNDATA*>(data.get());
+                if (GetRegionData(region, bytes, regionData) != 0) {
+                    const auto* rects = reinterpret_cast<RECT*>(regionData->Buffer);
+                    for (DWORD i = 0; i < regionData->rdh.nCount; ++i) {
+                        g_windowedRegions.push_back(rects[i]);
+                    }
+                }
+            }
+        }
+        if (region) {
+            DeleteObject(region);
+        }
+
         MONITORINFO monitorInfo{sizeof(MONITORINFO)};
         GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
 
-        SetWindowLongPtrW(hwnd, GWL_STYLE, g_windowedStyle & ~WS_OVERLAPPEDWINDOW);
+        SetWindowRgn(hwnd, nullptr, FALSE);
+        SetWindowLongPtrW(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, g_windowedExStyle & ~WS_EX_TOOLWINDOW);
         SetWindowPos(
             hwnd,
@@ -159,7 +181,7 @@ void ToggleFullScreen(HWND hwnd) {
             monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top,
             SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
-        ShowWindow(hwnd, SW_MAXIMIZE);
+        ShowWindow(hwnd, SW_SHOWMAXIMIZED);
         ResizeWebView(hwnd);
         g_isFullScreen = true;
         return;
@@ -176,6 +198,21 @@ void ToggleFullScreen(HWND hwnd) {
         0,
         0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+    if (!g_windowedRegions.empty()) {
+        HRGN restoreRegion = CreateRectRgn(0, 0, 0, 0);
+        if (restoreRegion) {
+            for (const RECT& rect : g_windowedRegions) {
+                HRGN part = CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom);
+                if (part) {
+                    CombineRgn(restoreRegion, restoreRegion, part, RGN_OR);
+                    DeleteObject(part);
+                }
+            }
+            SetWindowRgn(hwnd, restoreRegion, TRUE);
+        }
+        g_windowedRegions.clear();
+    }
 
     ShowWindow(hwnd, SW_RESTORE);
     ResizeWebView(hwnd);
