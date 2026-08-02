@@ -3,6 +3,7 @@
 #include <WebView2.h>
 #include <gdiplus.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 
 #include <chrono>
 #include <filesystem>
@@ -83,32 +84,48 @@ bool CaptureWindowToPng(HWND hwnd) {
         return false;
     }
 
-    Event doneEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-    if (!doneEvent.Get()) {
+    HANDLE doneEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!doneEvent) {
+        return false;
+    }
+
+    ComPtr<IStream> outputStream;
+    HRESULT hr = SHCreateStreamOnFileEx(
+        filePath.c_str(),
+        STGM_CREATE | STGM_WRITE | STGM_SHARE_DENY_WRITE,
+        FILE_ATTRIBUTE_NORMAL,
+        TRUE,
+        nullptr,
+        &outputStream);
+    if (FAILED(hr) || !outputStream) {
+        CloseHandle(doneEvent);
         return false;
     }
 
     bool isSaved = false;
-    HRESULT hr = g_webview->CapturePreview(
+    hr = g_webview->CapturePreview(
         COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
-        filePath.c_str(),
+        outputStream.Get(),
         Callback<ICoreWebView2CapturePreviewCompletedHandler>(
-            [&isSaved, &doneEvent](HRESULT result) -> HRESULT {
+            [&isSaved, doneEvent](HRESULT result) -> HRESULT {
                 isSaved = SUCCEEDED(result);
-                SetEvent(doneEvent.Get());
+                SetEvent(doneEvent);
                 return S_OK;
             })
             .Get());
 
     if (FAILED(hr)) {
+        CloseHandle(doneEvent);
         return false;
     }
 
     constexpr DWORD kCaptureTimeoutMs = 5000;
-    if (WaitForSingleObject(doneEvent.Get(), kCaptureTimeoutMs) != WAIT_OBJECT_0) {
+    if (WaitForSingleObject(doneEvent, kCaptureTimeoutMs) != WAIT_OBJECT_0) {
+        CloseHandle(doneEvent);
         return false;
     }
 
+    CloseHandle(doneEvent);
     return isSaved;
 }
 
