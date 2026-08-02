@@ -68,12 +68,13 @@ std::wstring BuildScreenshotPath() {
     }
 
     const auto now = std::chrono::system_clock::now();
+    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     const std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
     std::tm localTime{};
     localtime_s(&localTime, &nowTime);
 
     std::wstringstream fileName;
-    fileName << L"screenshot_" << std::put_time(&localTime, L"%Y%m%d_%H%M%S") << L".png";
+    fileName << L"screenshot_" << std::put_time(&localTime, L"%Y%m%d_%H%M%S") << L"_" << (nowMs % 1000) << L".png";
     return (folder / fileName.str()).wstring();
 }
 
@@ -105,6 +106,9 @@ bool CaptureWindowToPng(HWND hwnd) {
         return false;
     }
 
+    LARGE_INTEGER zero{};
+    outputStream->Seek(zero, STREAM_SEEK_SET, nullptr);
+
     bool isSaved = false;
     hr = g_webview->CapturePreview(
         COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
@@ -126,6 +130,10 @@ bool CaptureWindowToPng(HWND hwnd) {
     if (WaitForSingleObject(doneEvent, kCaptureTimeoutMs) != WAIT_OBJECT_0) {
         CloseHandle(doneEvent);
         return false;
+    }
+
+    if (isSaved) {
+        outputStream->Commit(STGC_DEFAULT);
     }
 
     CloseHandle(doneEvent);
