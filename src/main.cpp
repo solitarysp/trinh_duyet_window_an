@@ -1,8 +1,18 @@
 #include <windows.h>
 #include <wrl.h>
 #include <WebView2.h>
+#include <gdiplus.h>
+#include <shlobj.h>
+
+#include <chrono>
+#include <filesystem>
+#include <iomanip>
+#include <memory>
+#include <sstream>
 
 using namespace Microsoft::WRL;
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -13,6 +23,115 @@ bool g_isFullScreen = false;
 WINDOWPLACEMENT g_windowPlacement{sizeof(WINDOWPLACEMENT)};
 DWORD g_windowedStyle = 0;
 DWORD g_windowedExStyle = 0;
+ULONG_PTR g_gdiplusToken = 0;
+
+int GetPngEncoderClsid(CLSID* clsid) {
+    UINT num = 0;
+    UINT size = 0;
+    if (Gdiplus::GetImageEncodersSize(&num, &size) != Gdiplus::Ok || size == 0) {
+        return -1;
+    }
+
+    auto codecs = std::make_unique<BYTE[]>(size);
+    auto* imageCodecs = reinterpret_cast<Gdiplus::ImageCodecInfo*>(codecs.get());
+    if (Gdiplus::GetImageEncoders(num, size, imageCodecs) != Gdiplus::Ok) {
+        return -1;
+    }
+
+    for (UINT i = 0; i < num; ++i) {
+        if (wcscmp(imageCodecs[i].MimeType, L"image/png") == 0) {
+            *clsid = imageCodecs[i].Clsid;
+            return static_cast<int>(i);
+        }
+    }
+
+    return -1;
+}
+
+std::wstring BuildScreenshotPath() {
+    PWSTR desktopPath = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desktopPath)) || !desktopPath) {
+        return L"";
+    }
+
+    fs::path folder = fs::path(desktopPath) / L"image";
+    CoTaskMemFree(desktopPath);
+
+    std::error_code ec;
+    fs::create_directories(folder, ec);
+    if (ec) {
+        return L"";
+    }
+
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
+    std::tm localTime{};
+    localtime_s(&localTime, &nowTime);
+
+    std::wstringstream fileName;
+    fileName << L"screenshot_" << std::put_time(&localTime, L"%Y%m%d_%H%M%S") << L".png";
+    return (folder / fileName.str()).wstring();
+}
+
+bool CaptureWindowToPng(HWND hwnd) {
+    RECT rect{};
+    if (!GetClientRect(hwnd, &rect)) {
+        return false;
+    }
+
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    HDC windowDc = GetDC(hwnd);
+    if (!windowDc) {
+        return false;
+    }
+
+    HDC memoryDc = CreateCompatibleDC(windowDc);
+    if (!memoryDc) {
+        ReleaseDC(hwnd, windowDc);
+        return false;
+    }
+
+    HBITMAP bitmap = CreateCompatibleBitmap(windowDc, width, height);
+    if (!bitmap) {
+        DeleteDC(memoryDc);
+        ReleaseDC(hwnd, windowDc);
+        return false;
+    }
+
+    HGDIOBJ oldObj = SelectObject(memoryDc, bitmap);
+    bool captured = PrintWindow(hwnd, memoryDc, PW_CLIENTONLY) == TRUE;
+    if (!captured) {
+        captured = BitBlt(memoryDc, 0, 0, width, height, windowDc, 0, 0, SRCCOPY) == TRUE;
+    }
+
+    SelectObject(memoryDc, oldObj);
+    DeleteDC(memoryDc);
+    ReleaseDC(hwnd, windowDc);
+
+    if (!captured) {
+        DeleteObject(bitmap);
+        return false;
+    }
+
+    std::wstring filePath = BuildScreenshotPath();
+    if (filePath.empty()) {
+        DeleteObject(bitmap);
+        return false;
+    }
+
+    Gdiplus::Bitmap image(bitmap, nullptr);
+    CLSID pngClsid{};
+    const bool canSavePng = GetPngEncoderClsid(&pngClsid) >= 0;
+    const bool saved = canSavePng && image.Save(filePath.c_str(), &pngClsid, nullptr) == Gdiplus::Ok;
+
+    DeleteObject(bitmap);
+    return saved;
+}
 
 void ResizeWebView(HWND hwnd) {
     if (!g_controller) {
@@ -73,6 +192,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 ToggleFullScreen(hwnd);
                 return 0;
             }
+            if (wParam == VK_F9) {
+                const bool isSaved = CaptureWindowToPng(hwnd);
+                if (!isSaved) {
+                    MessageBoxW(hwnd, L"Chụp màn hình thất bại.", L"Screenshot", MB_OK | MB_ICONWARNING);
+                }
+                return 0;
+            }
             break;
         case WM_DESTROY:
             g_webview.Reset();
@@ -89,8 +215,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+    if (Gdiplus::GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, nullptr) != Gdiplus::Ok) {
+        return 1;
+    }
+
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) {
+        Gdiplus::GdiplusShutdown(g_gdiplusToken);
         return 1;
     }
 
@@ -101,6 +233,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
 
     if (!RegisterClassW(&wc)) {
         CoUninitialize();
+        Gdiplus::GdiplusShutdown(g_gdiplusToken);
         return 1;
     }
 
@@ -120,6 +253,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
 
     if (!hwnd) {
         CoUninitialize();
+        Gdiplus::GdiplusShutdown(g_gdiplusToken);
         return 1;
     }
 
@@ -161,6 +295,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     if (FAILED(hr)) {
         DestroyWindow(hwnd);
         CoUninitialize();
+        Gdiplus::GdiplusShutdown(g_gdiplusToken);
         return 1;
     }
 
@@ -171,5 +306,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
 
     CoUninitialize();
+    Gdiplus::GdiplusShutdown(g_gdiplusToken);
     return 0;
 }
