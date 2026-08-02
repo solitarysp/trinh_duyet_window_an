@@ -17,4 +17,4 @@ add_executable(HiddenBrowser WIN32 src/main.cpp)
 
 target_compile_definitions(HiddenBrowser PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
-target_link_libraries(HiddenBrowser PRIVATE webview2::loader user32 ole32)
+target_link_libraries(HiddenBrowser PRIVATE webview2::loader user32 ole32 gdiplus)
