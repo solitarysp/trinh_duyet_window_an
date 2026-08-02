@@ -23,7 +23,7 @@ jobs:
         run: nuget install Microsoft.Web.WebView2 -OutputDirectory packages
 
       - name: Configure (CMake)
-        run: cmake -S . -B build -A x64
+        run: cmake -S . -B build -A x64 -DDEFAULT_URL="https://www.google.com"
 
       - name: Build (Release)
         run: cmake --build build --config Release -- /m

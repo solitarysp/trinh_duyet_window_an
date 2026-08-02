@@ -17,6 +17,13 @@ cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
+Custom default URL khi build:
+
+```powershell
+cmake -S . -B build -A x64 -DDEFAULT_URL="https://example.com"
+cmake --build build --config Release
+```
+
 Nếu CMake không tự tìm SDK:
 
 ```powershell

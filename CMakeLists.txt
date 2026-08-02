@@ -10,6 +10,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(WEBVIEW2_SDK_DIR "" CACHE PATH "Path to Microsoft.Web.WebView2 SDK root (contains build/native/include/WebView2.h)")
+set(DEFAULT_URL "https://www.google.com" CACHE STRING "Default URL opened by WebView2 at startup")
+
+add_compile_definitions(DEFAULT_URL_WIDE=L"${DEFAULT_URL}")
 
 include(cmake/WebView2.cmake)
 

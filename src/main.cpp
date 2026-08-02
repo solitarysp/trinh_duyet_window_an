@@ -281,7 +281,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
                             }
 
                             ResizeWebView(hwnd);
-                            g_webview->Navigate(L"https://www.google.com");
+                            g_webview->Navigate(DEFAULT_URL_WIDE);
                             return S_OK;
                         })
                         .Get());
