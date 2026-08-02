@@ -236,7 +236,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     HWND hwnd = CreateWindowExW(
         WS_EX_TOOLWINDOW,
         wc.lpszClassName,
-        L"Chào bạn yêu",
+        L"Hello",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
