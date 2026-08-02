@@ -39,7 +39,7 @@ cmake --build build --config Release
 
 ## 4) GitHub Actions (CI)
 
-Workflow nằm tại: `.github/workflows/build-windows.yml`
+Workflow nằm tại: `.github/workflows/build-windows-google.yml`
 
 - Trigger: `push`, `pull_request`
 - Runner: `windows-latest`

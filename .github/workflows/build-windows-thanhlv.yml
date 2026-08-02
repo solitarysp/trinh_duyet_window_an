@@ -1,4 +1,4 @@
-name: Build Windows (WebView2)
+name: Build Windows thanhlv
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: nuget install Microsoft.Web.WebView2 -OutputDirectory packages
 
       - name: Configure (CMake)
-        run: cmake -S . -B build -A x64 -DDEFAULT_URL="https://www.google.com"
+        run: cmake -S . -B build -A x64 -DDEFAULT_URL="https://thanhlv.com"
 
       - name: Build (Release)
         run: cmake --build build --config Release -- /m
