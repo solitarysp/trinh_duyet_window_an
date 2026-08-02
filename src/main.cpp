@@ -20,6 +20,7 @@ namespace {
 
 ComPtr<ICoreWebView2Controller> g_controller;
 ComPtr<ICoreWebView2> g_webview;
+EventRegistrationToken g_acceleratorKeyToken{};
 
 bool g_isFullScreen = false;
 WINDOWPLACEMENT g_windowPlacement{sizeof(WINDOWPLACEMENT)};
@@ -225,6 +226,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             ResizeWebView(hwnd);
             return 0;
         case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
             if (wParam == VK_F11) {
                 ToggleFullScreen(hwnd);
                 return 0;
@@ -238,6 +240,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             }
             break;
         case WM_DESTROY:
+            if (g_controller) {
+                g_controller->remove_AcceleratorKeyPressed(g_acceleratorKeyToken);
+            }
             g_webview.Reset();
             g_controller.Reset();
             PostQuitMessage(0);
@@ -320,6 +325,35 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
                             if (FAILED(coreResult) || !g_webview) {
                                 return E_FAIL;
                             }
+
+                            g_controller->add_AcceleratorKeyPressed(
+                                Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
+                                    [hwnd](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
+                                        if (!args) {
+                                            return S_OK;
+                                        }
+
+                                        UINT key = 0;
+                                        if (FAILED(args->get_VirtualKey(&key))) {
+                                            return S_OK;
+                                        }
+
+                                        COREWEBVIEW2_KEY_EVENT_KIND kind{};
+                                        if (FAILED(args->get_KeyEventKind(&kind))) {
+                                            return S_OK;
+                                        }
+
+                                        if (key == VK_F11 &&
+                                            (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN ||
+                                             kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN)) {
+                                            args->put_Handled(TRUE);
+                                            ToggleFullScreen(hwnd);
+                                        }
+
+                                        return S_OK;
+                                    })
+                                    .Get(),
+                                &g_acceleratorKeyToken);
 
                             ResizeWebView(hwnd);
                             g_webview->Navigate(DEFAULT_URL_WIDE);
