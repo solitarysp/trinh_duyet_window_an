@@ -32,5 +32,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HiddenBrowser-windows-x64
-          path: build/Release/HiddenBrowser.exe
+          path: build/Release/code-ptit-client.exe
           if-no-files-found: error
