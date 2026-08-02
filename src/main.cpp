@@ -74,63 +74,42 @@ std::wstring BuildScreenshotPath() {
 }
 
 bool CaptureWindowToPng(HWND hwnd) {
-    RECT rect{};
-    if (!GetClientRect(hwnd, &rect)) {
-        return false;
-    }
-
-    const int width = rect.right - rect.left;
-    const int height = rect.bottom - rect.top;
-    if (width <= 0 || height <= 0) {
-        return false;
-    }
-
-    HDC windowDc = GetDC(hwnd);
-    if (!windowDc) {
-        return false;
-    }
-
-    HDC memoryDc = CreateCompatibleDC(windowDc);
-    if (!memoryDc) {
-        ReleaseDC(hwnd, windowDc);
-        return false;
-    }
-
-    HBITMAP bitmap = CreateCompatibleBitmap(windowDc, width, height);
-    if (!bitmap) {
-        DeleteDC(memoryDc);
-        ReleaseDC(hwnd, windowDc);
-        return false;
-    }
-
-    HGDIOBJ oldObj = SelectObject(memoryDc, bitmap);
-    bool captured = PrintWindow(hwnd, memoryDc, PW_CLIENTONLY) == TRUE;
-    if (!captured) {
-        captured = BitBlt(memoryDc, 0, 0, width, height, windowDc, 0, 0, SRCCOPY) == TRUE;
-    }
-
-    SelectObject(memoryDc, oldObj);
-    DeleteDC(memoryDc);
-    ReleaseDC(hwnd, windowDc);
-
-    if (!captured) {
-        DeleteObject(bitmap);
+    if (!g_webview) {
         return false;
     }
 
     std::wstring filePath = BuildScreenshotPath();
     if (filePath.empty()) {
-        DeleteObject(bitmap);
         return false;
     }
 
-    Gdiplus::Bitmap image(bitmap, nullptr);
-    CLSID pngClsid{};
-    const bool canSavePng = GetPngEncoderClsid(&pngClsid) >= 0;
-    const bool saved = canSavePng && image.Save(filePath.c_str(), &pngClsid, nullptr) == Gdiplus::Ok;
+    Event doneEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    if (!doneEvent.Get()) {
+        return false;
+    }
 
-    DeleteObject(bitmap);
-    return saved;
+    bool isSaved = false;
+    HRESULT hr = g_webview->CapturePreview(
+        COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+        filePath.c_str(),
+        Callback<ICoreWebView2CapturePreviewCompletedHandler>(
+            [&isSaved, &doneEvent](HRESULT result) -> HRESULT {
+                isSaved = SUCCEEDED(result);
+                SetEvent(doneEvent.Get());
+                return S_OK;
+            })
+            .Get());
+
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    constexpr DWORD kCaptureTimeoutMs = 5000;
+    if (WaitForSingleObject(doneEvent.Get(), kCaptureTimeoutMs) != WAIT_OBJECT_0) {
+        return false;
+    }
+
+    return isSaved;
 }
 
 void ResizeWebView(HWND hwnd) {
