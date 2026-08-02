@@ -32,5 +32,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HiddenBrowser-windows-x64
-          path: build/Release/Trac-Nghiem.exe
+          path: build/Release/HiddenBrowser.exe
           if-no-files-found: error
